@@ -19,6 +19,7 @@ const Weather = () => {
     const [weather, setWeather] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const WEATHER_API_KEY = import.meta.env.VITE_TOMORROW_API_KEY;
 
     const getWeatherCondition = (code) => {
         const conditions = {
@@ -96,12 +97,16 @@ const Weather = () => {
             setError('Please enter a location');
             return;
         }
+        if (!WEATHER_API_KEY) {
+            setError('Missing weather API key configuration');
+            return;
+        }
 
         try {
             setLoading(true);
             setError('');
             const response = await fetch(
-                `https://api.tomorrow.io/v4/weather/forecast?location=${encodeURIComponent(city)}&apikey=vzho96slqxbSfcVjVmaQQFO8J50mTTt6&timesteps=1d`
+                `https://api.tomorrow.io/v4/weather/forecast?location=${encodeURIComponent(city)}&apikey=${WEATHER_API_KEY}&timesteps=1d`
             );
             if (!response.ok) {
                 throw new Error('Location not found');
