@@ -109,35 +109,6 @@ npm run dev
 
 Default Vite URL is typically `http://localhost:5173`.
 
-## API Notes
-
-- Backend CORS currently allows origin `http://localhost:5173`.
-- Frontend should call servlet endpoints from Tomcat context path, for example:
-  - `/KrishiMandal/LoginServlet`
-  - `/KrishiMandal/ProductsListServlet`
-
-## Suggested Deployment/Submission Notes
-
-- Keep Oracle service and listener running (`OracleServiceXE`, `OracleXETNSListener`).
-- Do not commit large generated folders:
-  - `Krishi Mandal-frontend/node_modules/`
-  - `Krishi Mandal-frontend/dist/`
-  - backend build outputs (`KrishiMandal/build/`, `KrishiMandal/dist/`)
-
-## GitHub Push (Fresh Remote)
-
-The previous `origin` remote was removed from this local repo.  
-To connect your new repository and push:
-
-```bash
-cd D:\SIH-Project-2024
-git remote add origin <your-new-github-repo-url>
-git branch -M main
-git add .
-git commit -m "Initial SIH 2024 KrishiMandal project"
-git push -u origin main
-```
-
 ## SIH 2024 Context
 
 This project is developed as an SIH 2024 solution focused on farmer support through digital integration of commerce, collaboration, and services in agriculture.
