@@ -19,14 +19,22 @@ import java.text.SimpleDateFormat;
  * @author mishr
  */
 public class UserDAOImpl implements UserDao{
+    private boolean isConnectionUnavailable(Connection conn) {
+        return conn == null;
+    }
+
      public boolean isRegistered(String mobile){
         boolean flag=false;
         PreparedStatement ps=null;
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return false;
+        }
         try{
-            ps=conn.prepareStatement("select 1 from users where usermobile=?");
-            //select 1 se sql 1 return kar dega resultset me emailid ki jarurt hi nhi padega agar result milega
+            // Treat the incoming identifier as email for registration checks
+            ps=conn.prepareStatement("select 1 from users where email=?");
+            // select 1 is sufficient to know whether a row exists
             ps.setString(1,mobile);
             rs=ps.executeQuery();
             if(rs.next()){
@@ -44,14 +52,30 @@ public class UserDAOImpl implements UserDao{
     
     public String registerUser(UserPojo user){
         String status="Registration Failed";
-        boolean isUserRegistered=isRegistered(user.getUserMobile());
-        if(isUserRegistered){
-            status="Mobile No. Already Registered";
-            return status;
-        }
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return "Database Unavailable";
+        }
         PreparedStatement ps=null;
+        ResultSet rs=null;
+        boolean originalAutoCommit=true;
         try{
+            originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+
+            ps = conn.prepareStatement("select 1 from users where email=?");
+            ps.setString(1, user.getEmail());
+            rs = ps.executeQuery();
+            if (rs.next()) {
+                conn.rollback();
+                return "Email Already Registered";
+            }
+
+            DBUtil.closeResultSet(rs);
+            DBUtil.closeStatement(ps);
+            rs = null;
+            ps = null;
+
             ps=conn.prepareStatement("INSERT INTO users (usermobile, email,username, password) VALUES (?,?,?,?)");
              ps.setString(1,user.getUserMobile());
              ps.setString(2,user.getEmail());
@@ -59,14 +83,31 @@ public class UserDAOImpl implements UserDao{
              ps.setString(4,user.getPassword());
              int count=ps.executeUpdate();
              if(count==1){
+                 conn.commit();
                  status="Registration Successful";
                  //code to send email;
+             } else {
+                 conn.rollback();
              }
         }catch(SQLException ex){
             System.out.println("Exception in registerUser():"+ex);
             ex.printStackTrace();
+            try {
+                conn.rollback();
+            } catch (SQLException rollbackEx) {
+                System.out.println("Exception in registerUser() rollback:" + rollbackEx);
+                rollbackEx.printStackTrace();
+            }
+        } finally {
+            DBUtil.closeResultSet(rs);
+            DBUtil.closeStatement(ps);
+            try {
+                conn.setAutoCommit(originalAutoCommit);
+            } catch (SQLException ex) {
+                System.out.println("Exception in registerUser() autocommit reset:" + ex);
+                ex.printStackTrace();
+            }
         }
-        DBUtil.closeStatement(ps);
         return status;
         
     }
@@ -76,14 +117,19 @@ public class UserDAOImpl implements UserDao{
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
         String status="Login Denied: Invalid username password";
+        if (isConnectionUnavailable(conn)) {
+            return "Database Unavailable";
+        }
         //if(otp==0){
         try{
-            ps=conn.prepareStatement("select 1 from users where usermobile=? and password=?");
+            // Here 'mobile' parameter contains email address
+            ps=conn.prepareStatement("select 1 from users where email=? and password=?");
             ps.setString(1, mobile);
             ps.setString(2, password);
             rs=ps.executeQuery();
             if(rs.next()){
-                status=rs.getString(1);
+                // If a matching record is found, return a clear success message
+                status = "Login Successfully";
             }
         }catch(SQLException ex){
             status="Error"+ex.getMessage();
@@ -107,9 +153,13 @@ public class UserDAOImpl implements UserDao{
         PreparedStatement ps=null;
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return null;
+        }
         System.out.println(mobile);
         try{
-            ps=conn.prepareStatement("select * from users where usermobile=?");
+            // Treat input as email
+            ps=conn.prepareStatement("select * from users where email=?");
             ps.setString(1,mobile);
             rs=ps.executeQuery();
             if(rs.next()){
@@ -144,8 +194,11 @@ public class UserDAOImpl implements UserDao{
         PreparedStatement ps=null;
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return null;
+        }
         try{
-            ps=conn.prepareStatement("select username from users where usermobile=?");
+            ps=conn.prepareStatement("select username from users where email=?");
             ps.setString(1, mobile);
             rs=ps.executeQuery();
             if(rs.next()){
@@ -171,8 +224,11 @@ public class UserDAOImpl implements UserDao{
         PreparedStatement ps=null;
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return "Error:Database Unavailable";
+        }
         try{
-            ps=conn.prepareStatement("select address from users where usermobile=?");
+            ps=conn.prepareStatement("select address from users where email=?");
             ps.setString(1, mobile);
             rs=ps.executeQuery();
             if(rs.next()){
@@ -193,8 +249,11 @@ public class UserDAOImpl implements UserDao{
         PreparedStatement ps=null;
         ResultSet rs=null;
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return "Error:Database Unavailable";
+        }
         try{
-            ps=conn.prepareStatement("select pincode from users where usermobile=?");
+            ps=conn.prepareStatement("select pincode from users where email=?");
             ps.setString(1, usermobile);
             rs=ps.executeQuery();
             if(rs.next()){
@@ -213,9 +272,12 @@ public class UserDAOImpl implements UserDao{
     public String profileUpdate(String usermobile,UserPojo user){
         String status="Updation Failed!";
         Connection conn=DBUtil.provideConnection();
+        if (isConnectionUnavailable(conn)) {
+            return "Database Unavailable";
+        }
         PreparedStatement ps=null;
         try{
-            ps=conn.prepareStatement("insert into users values(?,?,?,?,?,?,?,?) where usermobile=? ");
+            ps=conn.prepareStatement("insert into users values(?,?,?,?,?,?,?,?) where email=? ");
              ps.setString(9,usermobile);
              ps.setString(1,user.getUserName());
              ps.setInt(2,user.getAge());

@@ -1,21 +1,33 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 function ChatbotAI() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Read API key from Vite env. Keep in mind: putting keys in frontend
+  // exposes them to clients. For production, use a server-side proxy.
   const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-3.5-flash";
   const API_URL = API_KEY
-    ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${API_KEY}`
     : null;
+
+  // For debugging: mask the API key so we don't print it fully to the UI/console.
+  const maskKey = (k) => {
+    if (!k) return null;
+    if (k.length <= 8) return k.replace(/.(?=.{2})/g, "*");
+    return `${k.slice(0, 4)}...${k.slice(-4)}`;
+  };
 
   const fetchChatbotAI = async () => {
     setLoading(true);
     setAnswer("");
 
     if (!API_URL) {
-      setAnswer("Missing API key configuration.");
+      setAnswer(
+        "Missing API key configuration. Please add VITE_GEMINI_API_KEY to your .env file and restart the dev server. See /GET_API_KEY.md for instructions."
+      );
       setLoading(false);
       return;
     }
@@ -32,30 +44,48 @@ function ChatbotAI() {
       ],
     };
 
-    fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestData),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data?.candidates && data.candidates.length > 0) {
-          console.log("Success");
-          setAnswer(
-            data.candidates[0].content.parts[0].text || "No response available"
-          );
-        } else {
-          setAnswer("Please check the input or try again later.");
-        }
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        setAnswer("An error occurred. Please try again later.");
-        setLoading(false);
+    try {
+      const resp = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
       });
+
+      const text = await resp.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        // non-json response - ignore parse error
+      }
+
+      if (!resp.ok) {
+        const message = (data && (data.error?.message || data.message)) || text || resp.statusText;
+        console.error("API error:", resp.status, message);
+        setAnswer(`API error ${resp.status}: ${message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (data?.candidates && data.candidates.length > 0) {
+        setAnswer(
+          data.candidates[0]?.content?.parts[0]?.text || "No response available"
+        );
+      } else {
+        // Provide more helpful diagnostic information if there is no candidate
+        setAnswer(
+          "No answer returned by the model. Response: " +
+            (text ? text.slice(0, 1000) : "(empty response)")
+        );
+      }
+    } catch (error) {
+      console.error("Network or unexpected error:", error);
+      setAnswer("Network error: " + (error?.message || String(error)));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleQuestionChange = (e) => {
@@ -74,6 +104,13 @@ function ChatbotAI() {
   return (
     <div className="space-y-4 p-6 max-w-md mx-auto bg-white rounded-lg shadow-md">
       <h1 className="text-2xl font-bold text-center">Chatbot AI</h1>
+      {import.meta.env.DEV && (
+        <p className="text-xs text-center text-gray-500">
+          {API_KEY
+            ? `Gemini API key present for model ${GEMINI_MODEL} (masked): ${maskKey(API_KEY)}`
+            : "No Gemini API key found in environment"}
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label
@@ -102,7 +139,7 @@ function ChatbotAI() {
       {answer && (
         <div className="mt-4 p-4 bg-gray-100 rounded-md">
           <h2 className="text-lg font-medium text-gray-900">Answer</h2>
-          <p className="text-gray-700">{answer}</p>
+          <p className="text-gray-700 whitespace-pre-wrap">{answer}</p>
         </div>
       )}
     </div>

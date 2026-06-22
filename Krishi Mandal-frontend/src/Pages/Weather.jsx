@@ -20,6 +20,7 @@ const Weather = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const WEATHER_API_KEY = import.meta.env.VITE_TOMORROW_API_KEY;
+    const isPlaceholderKey = !WEATHER_API_KEY || WEATHER_API_KEY.startsWith('your_');
 
     const getWeatherCondition = (code) => {
         const conditions = {
@@ -97,8 +98,8 @@ const Weather = () => {
             setError('Please enter a location');
             return;
         }
-        if (!WEATHER_API_KEY) {
-            setError('Missing weather API key configuration');
+        if (isPlaceholderKey) {
+            setError('Missing valid Tomorrow.io API key. Set VITE_TOMORROW_API_KEY in .env and restart the frontend.');
             return;
         }
 
@@ -109,7 +110,22 @@ const Weather = () => {
                 `https://api.tomorrow.io/v4/weather/forecast?location=${encodeURIComponent(city)}&apikey=${WEATHER_API_KEY}&timesteps=1d`
             );
             if (!response.ok) {
-                throw new Error('Location not found');
+                const text = await response.text();
+                let message = `Weather API error (${response.status})`;
+                try {
+                    const data = text ? JSON.parse(text) : null;
+                    message = data?.message || data?.error?.message || message;
+                } catch {
+                    if (text) {
+                        message = text;
+                    }
+                }
+                if (response.status === 401) {
+                    message = 'Tomorrow.io authentication failed. Check VITE_TOMORROW_API_KEY in .env.';
+                } else if (response.status === 400) {
+                    message = 'Location not found or request was rejected by Tomorrow.io.';
+                }
+                throw new Error(message);
             }
             const data = await response.json();
             if (!data?.timelines?.daily?.length) {

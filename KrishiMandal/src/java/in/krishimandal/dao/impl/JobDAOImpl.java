@@ -31,8 +31,14 @@ public class JobDAOImpl implements JobDao{
             job.setJobId(IDUtil.generateJobId());
         }
         Connection conn = DBUtil.provideConnection();
+        if (conn == null) {
+            return "Database Unavailable";
+        }
         PreparedStatement ps = null;
+        boolean originalAutoCommit = true;
         try {
+            originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
             ps = conn.prepareStatement("INSERT INTO Job (jobid, title, employer, description, location, salary,status,createdby) VALUES (?,?,?,?,?,?,?,?)");
             
             ps.setString(1, job.getJobId());
@@ -42,16 +48,31 @@ public class JobDAOImpl implements JobDao{
             ps.setString(5, job.getLocation());
             ps.setDouble(6, job.getSalary());
             ps.setString(7, "Open");
-            ps.setString(8, job.getMobile());
+            ps.setString(8, job.getCreatedBy() != null ? job.getCreatedBy() : job.getMobile());
             int count = ps.executeUpdate();
             if (count == 1) {
+                conn.commit();
                 status = "Job Added Successfully";
+            } else {
+                conn.rollback();
             }
         } catch (SQLException ex) {
             System.out.println("Exception occurred in addJob method: " + ex);
             ex.printStackTrace();
+            try {
+                conn.rollback();
+            } catch (SQLException rollbackEx) {
+                System.out.println("Exception occurred while rolling back addJob method: " + rollbackEx);
+                rollbackEx.printStackTrace();
+            }
         } finally {
             DBUtil.closeStatement(ps);
+            try {
+                conn.setAutoCommit(originalAutoCommit);
+            } catch (SQLException ex) {
+                System.out.println("Exception occurred while resetting autocommit in addJob method: " + ex);
+                ex.printStackTrace();
+            }
         }
         return status;
     }

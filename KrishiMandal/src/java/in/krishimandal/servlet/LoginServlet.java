@@ -12,6 +12,7 @@ import java.io.BufferedReader;
 import org.json.JSONObject;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.mail.MessagingException;
@@ -41,23 +42,41 @@ public class LoginServlet extends HttpServlet {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
 
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+
         try {
             String path = request.getServletPath();
-            StringBuilder stringBuilder = new StringBuilder();
-
-            try (BufferedReader reader = request.getReader()) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    stringBuilder.append(line);
-                }
-            }
-            JSONObject jsonRequest = new JSONObject(stringBuilder.toString());
-
             response.setContentType("application/json");
             PrintWriter out = response.getWriter();
 
             // Check for the correct endpoint
             if ("/LoginServlet".equals(path)) {
+                if ("GET".equalsIgnoreCase(request.getMethod())) {
+                    response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                    JSONObject jsonResponse = new JSONObject();
+                    jsonResponse.put("message", "Use POST with JSON body for login requests.");
+                    out.print(jsonResponse.toString());
+                    out.flush();
+                    return;
+                }
+
+                String requestBody;
+                try (BufferedReader reader = request.getReader()) {
+                    requestBody = reader.lines().collect(Collectors.joining());
+                }
+                if (requestBody == null || requestBody.trim().isEmpty()) {
+                    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    JSONObject jsonResponse = new JSONObject();
+                    jsonResponse.put("message", "Request body is required.");
+                    out.print(jsonResponse.toString());
+                    out.flush();
+                    return;
+                }
+
+                JSONObject jsonRequest = new JSONObject(requestBody);
                 handleLogin(jsonRequest, response, out,request);
             } else {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
@@ -74,44 +93,73 @@ public class LoginServlet extends HttpServlet {
 
     private void handleLogin(JSONObject jsonRequest, HttpServletResponse response, PrintWriter out,HttpServletRequest request) {
         try {
-        String mobileNumber = jsonRequest.optString("mobileNumber", "");
-        String password = jsonRequest.optString("password");
-        int otp=0;
-       //int otp=Integer.parseInt(jsonRequest.optString("otp",""));
-        String flag=jsonRequest.optString("useOtp");
-        boolean isRent=Boolean.parseBoolean(flag+otp);
-        //int otp =Integer.parseInt( jsonRequest.optString("otp"));
-            System.out.println(isRent+"ha");
-        int generatedOtp=0;
-        if(isRent){
-            generatedOtp=handleotp(mobileNumber);
-        }
-        System.out.println(isRent+""+otp+generatedOtp);
-        JSONObject jsonResponse = new JSONObject();
-        UserDAOImpl user=new UserDAOImpl();
-        String status=user.isValidCredentails(mobileNumber, password,otp,generatedOtp);
-        if (status.equalsIgnoreCase("Login Denied: Invalid username password")) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-           // jsonResponse.put("message", "Login Denied: Invalid username password");
-            response.getWriter().write("Login Denied: Invalid username password");
-        } else if (status.equalsIgnoreCase("Login Successfully")) {
+            // Use email as the primary identifier for OTP and login
+            String email = jsonRequest.optString("email", "");
+            String password = jsonRequest.optString("password", "");
+            int otp = jsonRequest.has("otp") ? jsonRequest.optInt("otp", -1) : -1;
+            boolean useOtp = jsonRequest.optBoolean("useOtp", false);
+
+            JSONObject jsonResponse = new JSONObject();
+            UserDAOImpl user = new UserDAOImpl();
+
+            // If client requested to use OTP but didn't provide otp value, generate and send OTP
+            if (useOtp && otp == -1) {
+                int generatedOtp = handleotp(email, request);
+                // store generated OTP in session for later verification
+                request.getSession().setAttribute("otp_" + email, generatedOtp);
                 response.setStatus(HttpServletResponse.SC_OK);
-                System.out.println("hii"+generatedOtp+mobileNumber);
-                response.getWriter().write("Login successful with OTP!");
-                jsonResponse.put("message", "Login successful with OTP!");
-            } else if(status.equalsIgnoreCase("Invalid OTP")) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                System.out.println(otp+generatedOtp);
-                response.getWriter().write("Invalid OTP.");
-                System.out.println("Invalid OTP.");
-                jsonResponse.put("message", "Invalid OTP.");
+                jsonResponse.put("message", "OTP sent to registered email.");
+                // For local/demo use only: optionally return the OTP in the response when DEV_RETURN_OTP=true
+                String devReturn = System.getenv("DEV_RETURN_OTP");
+                if (devReturn != null && devReturn.equalsIgnoreCase("true")) {
+                    jsonResponse.put("otp", generatedOtp);
+                }
+                out.print(jsonResponse.toString());
+                out.flush();
+                return;
             }
-         else {
+
+            // If using OTP for login (otp provided), verify it against session-stored value
+            if (useOtp && otp != -1) {
+                Object stored = request.getSession().getAttribute("otp_" + email);
+                int storedOtp = stored instanceof Integer ? (Integer) stored : -1;
+                if (storedOtp != -1 && storedOtp == otp) {
+                    response.setStatus(HttpServletResponse.SC_OK);
+                    jsonResponse.put("message", "Login successful with OTP!");
+                    // Optionally remove OTP after successful verification
+                    request.getSession().removeAttribute("otp_" + email);
+                    out.print(jsonResponse.toString());
+                    out.flush();
+                    return;
+                } else {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    jsonResponse.put("message", "Invalid OTP.");
+                    out.print(jsonResponse.toString());
+                    out.flush();
+                    return;
+                }
+            }
+
+            // Default: username/password login
+            String status = user.isValidCredentails(email, password, 0, 0);
+            if ("Database Unavailable".equalsIgnoreCase(status)) {
+                response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                jsonResponse.put("message", "Database is unavailable. Start Oracle XE and try again.");
+                out.print(jsonResponse.toString());
+            } else if (status == null || status.startsWith("Login Denied") || status.startsWith("Error")) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                jsonResponse.put("message", "Login Denied: Invalid username password");
+                out.print(jsonResponse.toString());
+            } else if (status.equalsIgnoreCase("Login Successfully")) {
                 response.setStatus(HttpServletResponse.SC_OK);
-               // jsonResponse.put("message", "Login successfully");
-                response.getWriter().write("Login successfully");
-            
-        } 
+                jsonResponse.put("message", "Login successful");
+                out.print(jsonResponse.toString());
+            } else {
+                // fallback
+                response.setStatus(HttpServletResponse.SC_OK);
+                jsonResponse.put("message", "Login successful");
+                out.print(jsonResponse.toString());
+            }
 
         // Ensure that the response content is set to JSON
         response.setContentType("application/json");
@@ -141,20 +189,24 @@ protected void doOptions(HttpServletRequest request, HttpServletResponse respons
     response.setHeader("Access-Control-Allow-Credentials", "true");
     response.setStatus(HttpServletResponse.SC_OK);
 }
-private int handleotp(String mobile){
-    UserDAOImpl userdao=new UserDAOImpl();
-    UserPojo user=new UserPojo();
-    user=userdao.getUserDetails(mobile);
-    String email=user.getEmail();
-    System.out.println(email);
-    int otp=0;
-    try{
-        otp=MailMessage.otp(email);
-    }catch (MessagingException e) {
-            e.printStackTrace();
-        }
-    return otp;
-}
+ private int handleotp(String email, HttpServletRequest request){
+     UserDAOImpl userdao=new UserDAOImpl();
+     UserPojo user=userdao.getUserDetails(email);
+     String userEmail = user != null ? user.getEmail() : email;
+     if (userEmail == null || userEmail.trim().isEmpty()) {
+         return 0;
+     }
+     System.out.println("Sending OTP to email: " + userEmail);
+     int otp=0;
+     try{
+         otp=MailMessage.otp(userEmail);
+         // store otp in session for this email
+         request.getSession().setAttribute("otp_" + userEmail, otp);
+     }catch (MessagingException e) {
+             e.printStackTrace();
+         }
+     return otp;
+ }
 
 
 

@@ -1,10 +1,42 @@
+`# Backend
 /KrishiMandal/dist/
 /KrishiMandal/build/
 /KrishiMandal/KRISHI MANDAL.pdf
 /KrishiMandal/KrishiMandal.iml
 /KrishiMandal/logo.jpg
 /KrishiMandal/PitchDeckKM (1).pptx
+
+# Frontend
 /Krishi Mandal-frontend/node_modules/
 /Krishi Mandal-frontend/dist/
+
+# Environment variables - NEVER commit these (contains secrets)
+.env
+KrishiMandal/.env
+Krishi Mandal-frontend/.env
+*.env.local
+*.env.*.local
+
+# IDE
 /.idea/
 *.iml
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+*.log
+
+# Build artifacts
+*.class
+*.war
+
+# Project-specific sensitive or local files
+/Database KrishiMandal.txt
+/Workflow of Krishimandal.txt
+/Krishi Mandal-frontend/GET_API_KEY.md
+/KrishiMandal/EMAIL_SETUP.md
+/Krishi Mandal-frontend/.env.example
+*.ear

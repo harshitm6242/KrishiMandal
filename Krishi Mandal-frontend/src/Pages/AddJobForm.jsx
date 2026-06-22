@@ -6,80 +6,48 @@ const AddJobForm = ({ onClose }) => {
   const [location, setLocation] = useState("");
   const [salary, setSalary] = useState("");
   const [description, setDescription] = useState("");
-  const [showFrom, setShowForm] = useState(true);
-  //   const [newJob, setNewJob] = useState({
-  //     title: "",
-  //     employer: "",
-  //     location: "",
-  //     salary: "",
-  //     description: "",
-  //   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-
-    // Truncate the description to 50 characters
-    const updatedValue =
-      name === "description" && value.length > 60 ? value.slice(0, 60) : value;
-    setNewJob({ ...newJob, [name]: updatedValue });
-  };
-  const handleButtonClick = () => {
-    setTimeout(() => {
-      //setConfirmationMessage("");
-      onClose();
-    }, 1000);
-  };
+  const [responseMessage, setResponseMessage] = useState("");
   const user = localStorage.getItem("id");
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(description);
-    //onAddJob(newJob);
+    setIsSubmitting(true);
+    setResponseMessage("");
     try {
-      const response = await fetch(
-        "http://localhost:2004/KrishiMandal/JobServlet",
-        {
-          method: "POST", // Change to POST
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include", // Include credentials like cookies if necessary
-          body: JSON.stringify({
-            title: title,
-            employer: employer,
-            description: description,
-            location: location,
-            salary: salary,
-            user: user,
-          }), // Include the request body
-        }
-      )
-        .then((response) => response.json())
-        .then((data) => {
-          alert(data.message);
-          console.log("Success:", data);
-        })
-        .catch((error) => {
-          console.error("Error:", error);
-        });
+      const response = await fetch("http://localhost:2004/KrishiMandal/JobServlet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          title,
+          employer,
+          description,
+          location,
+          salary,
+          user,
+        }),
+      });
+
+      const data = await response.json();
+      const message = data.message || "Unexpected response from server.";
 
       if (response.ok) {
-        const result = await response.json();
-        setResponseMessage(result.message); // Display servlet response
+        alert(message);
+        setResponseMessage(message);
+        onClose();
       } else {
-        setResponseMessage("Error: Unable to send data");
+        alert(message);
+        setResponseMessage(message);
       }
     } catch (error) {
       console.log("Error:", error);
       setResponseMessage("Error: Something went wrong");
+    } finally {
+      setIsSubmitting(false);
     }
-    setNewJob({
-      title: "",
-      employer: "",
-      location: "",
-      salary: "",
-      description: "",
-    });
   };
 
   return (
@@ -144,10 +112,10 @@ const AddJobForm = ({ onClose }) => {
           </div>
           <button
             type="submit"
-            onClick={handleButtonClick}
+            disabled={isSubmitting}
             className="bg-green-600 text-white px-4 py-2 rounded"
           >
-            Post Listing
+            {isSubmitting ? "Posting..." : "Post Listing"}
           </button>
           <button
             type="button"
@@ -157,6 +125,7 @@ const AddJobForm = ({ onClose }) => {
             Cancel
           </button>
         </form>
+        {responseMessage && <p className="mt-4 text-sm text-red-600">{responseMessage}</p>}
       </div>
     </div>
   );

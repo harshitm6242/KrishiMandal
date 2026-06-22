@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 function Signup() {
@@ -7,69 +7,44 @@ function Signup() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [gender, setGender] = useState("");
-  const [states, setStates] = useState([]);
-  const [districts, setDistricts] = useState([]);
   const [selectedState, setSelectedState] = useState("");
   const [otp, setOtp] = useState(""); // Added otp state
   const [useOtp, setUseOtp] = useState(false);
   const [responseMessage, setResponseMessage] = useState("");
   const navigate = useNavigate();
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:2004/KrishiMandal";
 
-  useEffect(() => {
-    fetchStates();
-  }, []);
-
-  const fetchStates = async () => {
-    const response = await fetch(
-      "https://cdn-api.co-vin.in/api/v2/admin/location/states"
-    );
-    const data = await response.json();
-    setStates(data.states);
-  };
-
-  const fetchDistricts = async (stateId) => {
-    const response = await fetch(
-      `https://cdn-api.co-vin.in/api/v2/admin/location/districts/${stateId}`
-    );
-    const data = await response.json();
-    setDistricts(data.districts);
-  };
 
   const handlesignup = async (e) => {
     e.preventDefault();
     // Handle signup logic here
     try {
-      const response = await fetch(
-        "http://localhost:2004/KrishiMandal/SignUpServlet",
-        {
-          method: "POST", // Change to POST
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include", // Include credentials like cookies if necessary
-          body: JSON.stringify({
-            mobileNumber: mobileNumber,
-            password: password,
-            email: email,
-            name: name,
-            otp: otp,
-            gender: gender, // Added gender if needed
-            state: selectedState, // Include selected state
-          }), // Include the request body
-        }
-      );
+      const response = await fetch(`${BACKEND_URL}/SignUpServlet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          mobileNumber: mobileNumber,
+          password: password,
+          email: email,
+          name: name,
+          otp: otp,
+          useOtp: useOtp,
+          gender: gender,
+          state: selectedState,
+        }),
+      });
       const message = await response.text();
-      if (response.ok) {
-        console.log(message);
-        alert(message);
-        const isLoggedIn = localStorage.getItem("loggedIn") === "true";
-        localStorage.setItem("loggedIn", "true");
-        localStorage.setItem("id", mobileNumber);
-        window.dispatchEvent(new Event("loginStateChanged"));
-        navigate("/");
-      } else {
-        alert(message);
-      }
+        if (response.ok) {
+          console.log(message);
+          alert(message);
+          localStorage.setItem("loggedIn", "true");
+          localStorage.setItem("id", email);
+          window.dispatchEvent(new Event("loginStateChanged"));
+          navigate("/");
+        } else {
+          alert(message);
+        }
     } catch (error) {
       console.log("Error:", error);
       setResponseMessage("Error: Something went wrong");
@@ -77,25 +52,37 @@ function Signup() {
   };
 
   const handleSendOtp = () => {
-    // Handle send OTP logic here
-    console.log("Sending OTP to:", mobileNumber);
-    // Logic for sending OTP will be implemented here
+    if (!email) {
+      alert("Please enter your email to send OTP.");
+      return;
+    }
+    (async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/SignUpServlet`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, useOtp: true }),
+        });
+        const text = await response.text();
+        if (response.ok) {
+          setUseOtp(true);
+          alert(text || "OTP sent to your email.");
+        } else {
+          alert(text || "Failed to send OTP.");
+        }
+      } catch (err) {
+        console.error("Send signup OTP error:", err);
+        setResponseMessage("Error sending OTP");
+      }
+    })();
   };
 
-  const handleStateChange = (e) => {
-    const stateId = e.target.value;
-    setSelectedState(stateId);
-    fetchDistricts(stateId); // Fetch districts when state changes
-  };
 
-  const handleDistrictChange = (e) => {
-    const districtId = e.target.value;
-    // Handle district change if necessary
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-green-100">
-      <div className="bg-white -pt-2 p-8 rounded-lg shadow-lg w-full max-w-md">
+      <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
         <h2 className="text-2xl font-bold mb-6 text-center text-green-700">
           Sign Up
         </h2>
@@ -124,15 +111,33 @@ function Signup() {
             >
               Email
             </label>
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              placeholder="Enter your email"
-              required
-            />
+            <div className="flex space-x-2">
+              <input
+                type="email"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="flex-1 shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                placeholder="Enter your email"
+                required
+              />
+              <button type="button" onClick={handleSendOtp} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded">
+                Send OTP
+              </button>
+            </div>
+            {useOtp && (
+              <div className="mt-3">
+                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="signupOtp">OTP</label>
+                <input
+                  type="text"
+                  id="signupOtp"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  placeholder="Enter OTP received on email"
+                />
+              </div>
+            )}
           </div>
 
           {/*Gender*/}
